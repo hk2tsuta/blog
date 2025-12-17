@@ -1,0 +1,27 @@
+memo,,,,,
+,,,,,
+ID,カテゴリ,検証項目名,検証目的・完了条件,具体的な実行手順 / コマンド例,想定結果
+NW-01,Network,Partner Interconnect 疎通確認,オンプレミスとGoogle Cloud間でのL3疎通および基本レイテンシの計測。,1. オンプレ側ルーターとVLANアタッチメントのBGPステータスが ESTABLISHED であることを確認。2. オンプレ端末からGCP内のVMへ ping を実行。3. iperf3 等でスループット計測。,パケットロスなく、想定帯域（例: 1Gbps等）に近い速度が出ること。
+NW-02,Network,Shared VPC 環境分離検証,Host Projectで定義したSubnetのみがService Projectで利用可能であり、環境間の不要な通信がFWで遮断されていること。,1. Dev用GKE PodからProd用SubnetのIPへ nc -zv <Prod-IP> <Port> を実行。2. ファイアウォールルールにて「Dev→Prod」がDenyとなっていることを確認。,通信がタイムアウトまたはRejectされ、環境間の分離が証明されること。
+NW-03,Network,Hybrid DNS 名前解決,GKE Pod内からオンプレミスのドメイン名、オンプレからGCPのPrivate DNS名が解決できること。,1. GKE Podに入る (kubectl exec)。2. nslookup <オンプレDBホスト名> を実行。3. オンプレ側から nslookup <Cloud-SQL-Private-IP> (または登録したレコード) を実行。,双方向でPrivate IPアドレスが返却されること。
+NW-04,Network,Egress NAT (Cloud NAT),GKEのPrivate Nodeからインターネット（外部API等）へのアクセスが可能であること。,1. Private Node上のPodから curl https://www.google.com を実行。2. Cloud NATのログを確認し、変換されていることを確認。,ステータス200 OKが返り、外部接続が可能であること。
+,,,,,
+ID,カテゴリ,検証項目名,検証目的・完了条件,具体的な実行手順 / コマンド例,想定結果
+CP-01,Compute,GKE Private Cluster 構築,コントロールプレーンへのアクセスが制限され、ノードがPublic IPを持たないセキュアな構成であること。,1. gcloud container clusters create ... --enable-private-nodes --enable-private-endpoint 等で作成。2. インターネット経由でkubectlを実行し、タイムアウトすることを確認。3. オンプレ（踏み台）からkubectlを実行し、接続できることを確認。,外部からの遮断と、閉域網からの操作性が確認できること。
+CP-02,Compute,Workload Identity 連携,Service Account Key (JSON) を発行せず、K8s SAとGCP SAを紐づけて権限を行使できること。,1. GKE上でK8s SAを作成し、GCP SAのIAMロール（例: Storage Admin）を紐づけ。2. 該当SAを使用したPodから gcloud storage ls を実行。,認証エラーが出ず、バケット一覧等が取得できること。
+CP-03,Compute,GKE Identity Service (Azure AD),kubectl 利用時にAzure ADアカウントで認証し、RBACで制御できること。,1. authentication-config.yaml を作成しAzure ADのOIDC情報を記述して適用。2. 開発者PCで gcloud container clusters get-credentials を実行。3. ブラウザでAzure ADログイン画面が開き、認証後にコマンドが成功することを確認。,自身のAzure ADアカウントでクラスタ操作が可能になること。
+CP-04,Storage,Persistent Disk (CSI) 動作,ステートフルアプリ用にPV/PVCが動的にプロビジョニングされ、Pod再起動後もデータが保持されること。,1. StorageClass standard-rwo を指定したPVCを作成。2. Podでマウントしファイル書き込み。3. Podを削除・再作成し、ファイルが存在するか確認。,データが永続化されており、書き込みデータが消失していないこと。
+,,,,,
+ID,カテゴリ,検証項目名,検証目的・完了条件,具体的な実行手順 / コマンド例,想定結果
+DB-01,Database,Cloud SQL for PostgreSQL 構築,Private IPのみを持つインスタンスが起動し、GKEから接続可能であること。,1. Private Service Access (PSA) 用のIPレンジをVPCに確保。2. Cloud SQLインスタンス作成（Public IP無効）。3. GKE Podから psql -h <Private-IP> -U postgres で接続。,接続が確立し、SQLクエリが実行できること。
+DB-02,Database,拡張機能 (Extensions) 検証,現行で使用しているCrunchy PostgresのExtensionが利用可能か。,"1. Cloud SQL上で CREATE EXTENSION <名称>; を実行 (例: pg_stat_statements, postgis 等)。",エラーなくExtensionが有効化されること。
+DB-03,Database,Database Migration Service (DMS),オンプレDBから初期データ同期および継続的レプリケーションが機能すること。,1. オンプレDBでpg_hba.conf等の設定変更（外部接続許可）。2. GCPコンソールでDMSジョブを作成し、接続プロファイルを定義。3. レプリケーションを開始し、ステータスが「CDC（変更データキャプチャ）」になるまで待機。,オンプレ側で行ったINSERT/UPDATEが数秒〜数分以内にCloud SQL側に反映されること。
+,,,,,
+ID,カテゴリ,検証項目名,検証目的・完了条件,具体的な実行手順 / コマンド例,想定結果
+CI-01,CI/CD,Artifact Registry (GAR) 移行,Docker Imageを格納でき、GKEからPullできること。,1. オンプレHarborから gcrane cp 等でGARへイメージコピー。2. GKE Pod定義で image: <region>-docker.pkg.dev/... を指定。3. PodをApply。,ImagePullBackOffにならず、正常にContainerCreating→Runningになること。
+CI-02,CI/CD,Azure DevOps to GAR (WIF),Azure PipelinesからKeyレスでGCPへ認証し、Build & Pushできること。,1. GCP側でWorkload Identity Poolを作成。2. Azure DevOpsのService Connection設定。3. Pipelineを実行し docker push タスクを走らせる。,認証エラーなくGARに新しいタグのイメージが格納されること。
+CI-03,CI/CD,ArgoCD on GKE 動作,GKE上のArgoCDがAzure DevOps (Git) からマニフェストを取得し、Syncできること。,1. GKEにArgoCDをインストール。2. SecretとしてAzure DevOpsのPAT(Personal Access Token)またはSSH鍵を登録。3. Applicationリソースを作成しSync実行。,Git上の変更が検知され、GKE上のリソースが更新されること。
+,,,,,
+ID,カテゴリ,検証項目名,検証目的・完了条件,具体的な実行手順 / コマンド例,想定結果
+SEC-01,Security,IAP (Identity-Aware Proxy),アプリへのアクセス時にAzure AD認証を強制し、VPNなしでも安全にアクセスできること。,1. Google Cloud側でOAuth同意画面設定。2. GKE Ingress (Gateway) に cloud.google.com/backend-config アノテーションを付与しIAP有効化。3. Azure ADをIDプロバイダとして連携設定。4. IncognitoブラウザでアプリURLへアクセス。,アプリ画面の前にMicrosoftのログイン画面が表示され、認証成功後にアプリが表示されること。
+SEC-02,Security,IAP 認可制御 (Access Policy),特定のAzure ADグループのみがアプリにアクセスできるよう制御する。,1. IAP管理画面で、リソースに対し「プリンシパル: <Azure AD Group Email>」「ロール: IAP-secured Web App User」を付与。2. 権限のない別ユーザーでログイン試行。,「アクセス権がありません (403 Forbidden)」と表示されること。
